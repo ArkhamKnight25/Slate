@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createNotionPage } from "@/lib/notion";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
@@ -16,6 +17,18 @@ export async function POST(request: Request) {
     const notionToken = body.notionToken?.trim() || "";
     const appPassword = process.env.APP_PASSWORD?.trim() || "";
     const usingPersonalToken = Boolean(notionToken);
+
+    const hasValidAccessCode = Boolean(appPassword && accessCode === appPassword);
+    if (!hasValidAccessCode) {
+      const ip = getClientIp(request);
+      const { allowed, remaining, resetAt } = checkRateLimit(ip, "create");
+      if (!allowed) {
+        return NextResponse.json(
+          { error: `Rate limit exceeded. Try again in ${Math.ceil((resetAt - Date.now()) / 1000)}s.` },
+          { status: 429, headers: { "X-RateLimit-Remaining": String(remaining) } }
+        );
+      }
+    }
 
     if (!usingPersonalToken && appPassword && accessCode !== appPassword) {
       return NextResponse.json({ error: "Invalid access code." }, { status: 401 });

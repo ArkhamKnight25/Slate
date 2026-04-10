@@ -6,6 +6,7 @@ import {
   parseNotionPageId,
   type ImportMode
 } from "@/lib/notion";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 type Payload = {
   pageUrl?: string;
@@ -29,6 +30,18 @@ export async function POST(request: Request) {
     const sharedToken = process.env.NOTION_TOKEN?.trim() || "";
     const appPassword = process.env.APP_PASSWORD?.trim() || "";
     const usingPersonalToken = Boolean(notionToken);
+
+    const hasValidAccessCode = Boolean(appPassword && accessCode === appPassword);
+    if (!hasValidAccessCode) {
+      const ip = getClientIp(request);
+      const { allowed, remaining, resetAt } = checkRateLimit(ip, "import");
+      if (!allowed) {
+        return NextResponse.json(
+          { error: `Rate limit exceeded. Try again in ${Math.ceil((resetAt - Date.now()) / 1000)}s.` },
+          { status: 429, headers: { "X-RateLimit-Remaining": String(remaining) } }
+        );
+      }
+    }
 
     if (!pageUrl) {
       return NextResponse.json(
